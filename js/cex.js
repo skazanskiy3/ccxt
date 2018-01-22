@@ -22,7 +22,9 @@ module.exports = class cex extends Exchange {
                 'fetchOpenOrders': true,
             },
             'timeframes': {
-                '1m': '1m',
+                '1m': 'data1m',
+                '1h': 'data1h',
+                '1d': 'data1d'
             },
             'urls': {
                 'logo': 'https://user-images.githubusercontent.com/1294454/27766442-8ddc33b0-5ed8-11e7-8b98-f786aef0f3c9.jpg',
@@ -209,8 +211,7 @@ module.exports = class cex extends Exchange {
         };
         let response = await this.publicGetOhlcvHdYyyymmddPair (this.extend (request, params));
 
-        const timeFrameKey = 'data' + timeFrame;
-        let key = 'data' + this.timeframes[timeFrameKey];
+        let key = this.timeframes[timeframe];
         let ohlcvs = JSON.parse (response[key]);
         return this.parseOHLCVs (ohlcvs, market, timeframe, since, limit);
     }

@@ -208,7 +208,9 @@ module.exports = class cex extends Exchange {
             'yyyymmdd': ymd,
         };
         let response = await this.publicGetOhlcvHdYyyymmddPair (this.extend (request, params));
-        let key = 'data' + this.timeframes[timeframe];
+
+        const timeFrameKey = 'data' + timeFrame;
+        let key = 'data' + this.timeframes[timeFrameKey];
         let ohlcvs = JSON.parse (response[key]);
         return this.parseOHLCVs (ohlcvs, market, timeframe, since, limit);
     }

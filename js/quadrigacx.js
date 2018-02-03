@@ -3,12 +3,11 @@
 //  ---------------------------------------------------------------------------
 
 const Exchange = require ('./base/Exchange');
-const { ExchangeError } = require ('./base/errors');
+const { ExchangeError, AuthenticationError } = require ('./base/errors');
 
 //  ---------------------------------------------------------------------------
 
 module.exports = class quadrigacx extends Exchange {
-
     describe () {
         return this.deepExtend (super.describe (), {
             'id': 'quadrigacx',
@@ -45,10 +44,16 @@ module.exports = class quadrigacx extends Exchange {
                         'balance',
                         'bitcoin_deposit_address',
                         'bitcoin_withdrawal',
+                        'bitcoincash_deposit_address',
+                        'bitcoincash_withdrawal',
+                        'bitcoingold_deposit_address',
+                        'bitcoingold_withdrawal',
                         'buy',
                         'cancel_order',
                         'ether_deposit_address',
                         'ether_withdrawal',
+                        'litecoin_deposit_address',
+                        'litecoin_withdrawal',
                         'lookup_order',
                         'open_orders',
                         'sell',
@@ -192,10 +197,14 @@ module.exports = class quadrigacx extends Exchange {
     }
 
     getCurrencyName (currency) {
-        if (currency === 'ETH')
-            return 'Ether';
-        if (currency === 'BTC')
-            return 'Bitcoin';
+        const currencies = {
+            'ETH': 'Ether',
+            'BTC': 'Bitcoin',
+            'LTC': 'Litecoin',
+            'BCH': 'Bitcoincash',
+            'BTG': 'Bitcoingold',
+        };
+        return currencies[currency];
     }
 
     async withdraw (currency, amount, address, tag = undefined, params = {}) {
@@ -234,6 +243,18 @@ module.exports = class quadrigacx extends Exchange {
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
 
+    handleErrors (statusCode, statusText, url, method, headers, body) {
+        if (typeof body !== 'string')
+            return; // fallback to default error handler
+        if (body.length < 2)
+            return;
+        // Here is a sample QuadrigaCX response in case of authentication failure:
+        // {"error":{"code":101,"message":"Invalid API Code or Invalid Signature"}}
+        if (statusCode === 200 && body.indexOf ('Invalid API Code or Invalid Signature') >= 0) {
+            throw new AuthenticationError (this.id + ' ' + body);
+        }
+    }
+
     async request (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
         let response = await this.fetch2 (path, api, method, params, headers, body);
         if (typeof response === 'string')
@@ -242,4 +263,4 @@ module.exports = class quadrigacx extends Exchange {
             throw new ExchangeError (this.id + ' ' + this.json (response));
         return response;
     }
-}
+};

@@ -8,7 +8,6 @@ const { ExchangeError, AuthenticationError, InvalidOrder, InsufficientFunds, Ord
 //  ---------------------------------------------------------------------------
 
 module.exports = class bittrex extends Exchange {
-
     describe () {
         return this.deepExtend (super.describe (), {
             'id': 'bittrex',
@@ -19,16 +18,17 @@ module.exports = class bittrex extends Exchange {
             'hasAlreadyAuthenticatedSuccessfully': false, // a workaround for APIKEY_INVALID
             // new metainfo interface
             'has': {
-                'fetchDepositAddress': true,
                 'CORS': true,
-                'fetchTickers': true,
+                'createMarketOrder': false,
+                'fetchDepositAddress': true,
+                'fetchClosedOrders': 'emulated',
+                'fetchCurrencies': true,
+                'fetchMyTrades': false,
                 'fetchOHLCV': true,
                 'fetchOrder': true,
                 'fetchOrders': true,
-                'fetchClosedOrders': 'emulated',
                 'fetchOpenOrders': true,
-                'fetchMyTrades': false,
-                'fetchCurrencies': true,
+                'fetchTickers': true,
                 'withdraw': true,
             },
             'timeframes': {
@@ -153,10 +153,10 @@ module.exports = class bittrex extends Exchange {
         for (let i = 0; i < response['result'].length; i++) {
             let market = response['result'][i]['Market'];
             let id = market['MarketName'];
-            let base = market['MarketCurrency'];
-            let quote = market['BaseCurrency'];
-            base = this.commonCurrencyCode (base);
-            quote = this.commonCurrencyCode (quote);
+            let baseId = market['MarketCurrency'];
+            let quoteId = market['BaseCurrency'];
+            let base = this.commonCurrencyCode (baseId);
+            let quote = this.commonCurrencyCode (quoteId);
             let symbol = base + '/' + quote;
             let precision = {
                 'amount': 8,
@@ -168,6 +168,8 @@ module.exports = class bittrex extends Exchange {
                 'symbol': symbol,
                 'base': base,
                 'quote': quote,
+                'baseId': baseId,
+                'quoteId': quoteId,
                 'active': active,
                 'info': market,
                 'lot': Math.pow (10, -precision['amount']),
@@ -238,6 +240,13 @@ module.exports = class bittrex extends Exchange {
         let symbol = undefined;
         if (market)
             symbol = market['symbol'];
+        let previous = this.safeFloat (ticker, 'PrevDay');
+        let last = this.safeFloat (ticker, 'Last');
+        let change = undefined;
+        if (typeof last !== 'undefined')
+            if (typeof previous !== 'undefined')
+                if (previous > 0)
+                    change = (last - previous) / previous;
         return {
             'symbol': symbol,
             'timestamp': timestamp,
@@ -250,8 +259,8 @@ module.exports = class bittrex extends Exchange {
             'open': undefined,
             'close': undefined,
             'first': undefined,
-            'last': this.safeFloat (ticker, 'Last'),
-            'change': undefined,
+            'last': last,
+            'change': change,
             'percentage': undefined,
             'average': undefined,
             'baseVolume': this.safeFloat (ticker, 'Volume'),
@@ -272,10 +281,13 @@ module.exports = class bittrex extends Exchange {
             // differentiated fees for each particular method
             let code = this.commonCurrencyCode (id);
             let precision = 8; // default precision, todo: fix "magic constants"
+            let address = this.safeValue (currency, 'BaseAddress');
             result[code] = {
                 'id': id,
                 'code': code,
+                'address': address,
                 'info': currency,
+                'type': currency['CoinType'],
                 'name': currency['CurrencyLong'],
                 'active': currency['IsActive'],
                 'status': 'ok',
@@ -430,6 +442,10 @@ module.exports = class bittrex extends Exchange {
         let result = {
             'info': response,
             'id': response['result'][orderIdField],
+            'symbol': symbol,
+            'type': type,
+            'side': side,
+            'status': 'open',
         };
         return result;
     }
@@ -473,11 +489,10 @@ module.exports = class bittrex extends Exchange {
         let isBuyOrder = (side === 'LIMIT_BUY') || (side === 'BUY');
         side = isBuyOrder ? 'buy' : 'sell';
         let status = 'open';
-        if (('Closed' in order) && order['Closed']) {
+        if (('Closed' in order) && order['Closed'])
             status = 'closed';
-        } else if (('CancelInitiated' in order) && order['CancelInitiated']) {
+        if (('CancelInitiated' in order) && order['CancelInitiated'])
             status = 'canceled';
-        }
         let symbol = undefined;
         if (!market) {
             if ('Exchange' in order) {
@@ -593,19 +608,26 @@ module.exports = class bittrex extends Exchange {
         return currency;
     }
 
-    async fetchDepositAddress (currency, params = {}) {
-        let currencyId = this.currencyId (currency);
+    async fetchDepositAddress (code, params = {}) {
+        await this.loadMarkets ();
+        let currency = this.currency (code);
         let response = await this.accountGetDepositaddress (this.extend ({
-            'currency': currencyId,
+            'currency': currency['id'],
         }, params));
         let address = this.safeString (response['result'], 'Address');
         let message = this.safeString (response, 'message');
         let status = 'ok';
         if (!address || message === 'ADDRESS_GENERATING')
             status = 'pending';
+        let tag = undefined;
+        if ((code === 'XRP') || (code === 'XLM')) {
+            tag = address;
+            address = currency['address'];
+        }
         return {
-            'currency': currency,
+            'currency': code,
             'address': address,
+            'tag': tag,
             'status': status,
             'info': response,
         };
@@ -715,4 +737,4 @@ module.exports = class bittrex extends Exchange {
         }
         this.throwExceptionOnError (response);
     }
-}
+};
